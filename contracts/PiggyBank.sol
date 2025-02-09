@@ -40,7 +40,7 @@ contract PiggyBank {
     mapping(address => bool) public hasMinted;
     uint256 public immutable withdrawalDate;
     uint8 public contributorsCount;
-    address public manager;
+    address payable public manager;
     IJunoToken public token;
     iJunoNft public nft;
 
@@ -57,7 +57,7 @@ contract PiggyBank {
     );
 
     // constructor
-    constructor (uint256 _targetAmount, uint256 _withdrawalDate, address _manager) {
+    constructor (uint256 _targetAmount, uint256 _withdrawalDate, address payable _manager) {
         require(_withdrawalDate > block.timestamp, 'WITHDRAWAL MUST BE IN FUTURE');
 
         targetAmount = _targetAmount;
@@ -81,31 +81,31 @@ contract PiggyBank {
 
 
     // save
-    function save () external payable {
+    function save (uint256 _amount) external{
 
         require(msg.sender != address(0), 'UNAUTHORIZED ADDRESS');
 
         require(block.timestamp <= withdrawalDate, 'YOU CAN NO LONGER SAVE');
 
-        require(msg.value > 0, 'YOU ARE BROKE');
+        require(_amount > 0, 'YOU ARE BROKE');
 
         // transfer the token to the contract
-        token.transferFrom(msg.sender, address(this), msg.value);
+        token.transferFrom(msg.sender, address(this), _amount);
         // save the contribution
-        contributions[msg.sender] += msg.value;
+        contributions[msg.sender] += _amount;
 
         // check if the caller is a first time contributor
         if(contributions[msg.sender] == 0) {
             contributorsCount += 1;
         }
 
-        if(contributions[msg.sender] >= 2 && !hasMinted[msg.sender]) {
+        if(contributions[msg.sender] >= 2 ether && !hasMinted[msg.sender]) {
             nft.mint(msg.sender);
             hasMinted[msg.sender] = true;
         }
 
         // emit the event
-        emit Contributed(msg.sender, msg.value, block.timestamp);
+        emit Contributed(msg.sender, _amount, block.timestamp);
     }
 
     // withdrawal
