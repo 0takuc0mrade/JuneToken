@@ -1,16 +1,35 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.28;
+pragma solidity ^0.8.28;
 
-interface IJuneToken {
+import './JunoToken.sol';
+import './JunoNft.sol';
+
+// interface IJuneToken {
+//     function totalSupply() external view returns (uint256);
+//     function checkBalance(address account) external view returns (uint256);
+//     function transfer(address recipient, uint256 amount) external returns (bool);
+//     function getAllowance(address owner, address spender) external view returns (uint256);
+//     function approve(address spender, uint256 amount) external returns (bool);
+//     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+//     event Transfer(address indexed from, address indexed to, uint256 value);
+//     event Approval(address indexed owner, address indexed spender, uint256 value);
+
+// }
+
+interface IJunoToken {
     function totalSupply() external view returns (uint256);
-    function checkBalance(address account) external view returns (uint256);
-    function transfer(address recipient, uint256 amount) external returns (bool);
-    function getAllowance(address owner, address spender) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
-    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
+}
 
+interface iJunoNft {
+    function mint(address _to) external;
 }
 
 contract PiggyBank {
@@ -18,10 +37,12 @@ contract PiggyBank {
     // state variables
     uint256 public targetAmount;
     mapping(address => uint256) public contributions;
+    mapping(address => bool) public hasMinted;
     uint256 public immutable withdrawalDate;
     uint8 public contributorsCount;
     address public manager;
-    IJuneToken public token;
+    IJunoToken public token;
+    iJunoNft public nft;
 
     // events
     event Contributed (
@@ -50,6 +71,15 @@ contract PiggyBank {
         _;
     }
 
+    function setTokenAddress(address _token) external onlyManager {
+        token = IJunoToken(_token);
+    }
+
+    function setNftAddress(address _nft) external onlyManager {
+        nft = iJunoNft(_nft);
+    }
+
+
     // save
     function save () external payable {
 
@@ -59,15 +89,21 @@ contract PiggyBank {
 
         require(msg.value > 0, 'YOU ARE BROKE');
 
+        // transfer the token to the contract
+        token.transferFrom(msg.sender, address(this), msg.value);
+        // save the contribution
+        contributions[msg.sender] += msg.value;
+
         // check if the caller is a first time contributor
         if(contributions[msg.sender] == 0) {
             contributorsCount += 1;
         }
 
-        // transfer the token to the contract
-        token.transferFrom(msg.sender, address(this), msg.value);
-        // save the contribution
-        contributions[msg.sender] += msg.value;
+        if(contributions[msg.sender] >= 2 && !hasMinted[msg.sender]) {
+            nft.mint(msg.sender);
+            hasMinted[msg.sender] = true;
+        }
+
         // emit the event
         emit Contributed(msg.sender, msg.value, block.timestamp);
     }
@@ -77,13 +113,15 @@ contract PiggyBank {
         // require that its withdrawal time or greater
         require(block.timestamp >= withdrawalDate, 'NOT YET TIME');
 
+         uint256 _contractBal = token.balanceOf(address(this));
+
         // require contract bal is > or = targetAmount
-        require(address(this).balance >= targetAmount, 'TARGET AMOUNT NOT REACHED');
+        require(_contractBal >= targetAmount, 'TARGET AMOUNT NOT REACHED');
 
-        uint256 _contractBal = address(this).balance;
+         // transfer to manager
+        bool transaction = token.transfer(manager, _contractBal);
 
-        // transfer to manager
-        payable(manager).transfer(_contractBal);
+        require(transaction, "Transaction Failed");
 
         emit Withdrawn(_contractBal, block.timestamp);
     }
